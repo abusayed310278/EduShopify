@@ -69,10 +69,11 @@ class AttributeGroupImportController extends Controller
 
         Session::forget(self::SESSION_KEY);
 
-        $summary = $service->import($rows, $this->admin()->id);
+        $summary = $service->import($rows, $this->admin()->id, (array) $request->input('create_anyway', []));
 
         return redirect()->route('admin.catalog.builder.attribute-groups')
             ->with('success', "Import complete — {$summary['created_count']} group".($summary['created_count'] === 1 ? '' : 's')." created, {$summary['existing_count']} already existed."
+                .($summary['possible_count'] > 0 ? " {$summary['possible_count']} possible duplicate(s) skipped." : '')
                 .($summary['error_count'] > 0 ? " {$summary['error_count']} row(s) had errors and were skipped." : ''));
     }
 }

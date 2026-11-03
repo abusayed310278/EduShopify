@@ -151,6 +151,22 @@
             </div>
 
             <div class="bg-white rounded-xl border border-gray-200 p-5 text-center">
+                <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
+                    <i class="fa-solid fa-file-export text-lg"></i>
+                </div>
+                <h3 class="text-sm font-bold text-gray-900 mb-1">Export</h3>
+                <p class="text-xs text-gray-500 mb-4">Download everything as CSV, with every column as stored in the database.</p>
+                <div class="space-y-2">
+                    <a href="{{ route('admin.catalog.attributes.export') }}" class="block text-sm font-semibold px-4 py-2.5 rounded-lg w-full border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition">
+                        <i class="fa-solid fa-download text-xs mr-1.5"></i> Export Attributes
+                    </a>
+                    <a href="{{ route('admin.catalog.attributes.values-export') }}" class="block text-sm font-semibold px-4 py-2.5 rounded-lg w-full border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition">
+                        <i class="fa-solid fa-download text-xs mr-1.5"></i> Export Attribute Values
+                    </a>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 p-5 text-center">
                 <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
                     <i class="fa-solid fa-list-ul text-lg"></i>
                 </div>
@@ -209,16 +225,24 @@
             <div class="pt-4 space-y-4">
                 <p class="text-xs text-gray-500">
                     Upload a CSV with <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">name</code> and
-                    <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">input_type</code> columns — one attribute per row, both required.
-                    Optional columns: <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">attribute_group</code> (matched by name — must already exist),
+                    <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">attribute_group</code> columns — one attribute per row, both required.
+                    The group is matched by name and must already exist (e.g. Key Features).
+                </p>
+                <p class="text-xs text-gray-500">
+                    <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">input_type</code> is optional — blank means single-line text. Valid values: text, textarea, number,
+                    select, multi_select, boolean, date, color (or the display name, e.g. Number / Decimal).
+                    Other optional columns: <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">unit</code>, <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">placeholder</code>,
                     <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">is_required</code>, <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">is_filterable</code>,
-                    <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">is_variant</code> (1 or 0). Valid input_type values: text, textarea, number,
-                    select, multi_select, boolean, date, color. Attributes that already exist (matched by name) are reused, never duplicated.
+                    <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">is_variant</code>, <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">allow_custom_value</code> (1 or 0).
+                </p>
+                <p class="text-xs text-gray-500">
+                    Existing attributes are never changed. Names are compared ignoring case, spaces and symbols, so Wi-Fi matches WiFi; very similar names
+                    (Colour / Color) are held back for you to review in the next step.
                 </p>
                 <div class="bg-gray-50 border border-gray-100 rounded-lg p-3 text-[11px] font-mono text-gray-600 leading-5 overflow-x-auto">
-                    name,input_type,attribute_group,is_required,is_filterable,is_variant<br>
-                    Voltage,number,Technical Specification,0,1,0<br>
-                    Color,select,Physical Dimensions,0,1,1
+                    name,attribute_group,input_type,is_filterable<br>
+                    Model Number,Key Features,,0<br>
+                    Voltage,Key Features,number,1
                 </div>
 
                 @error('file')
@@ -259,43 +283,11 @@
                     <button type="button" @click="open = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
                 </div>
 
-                <div class="py-4 flex items-center gap-4 shrink-0">
-                    <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <i class="fa-solid fa-plus"></i> {{ $attributeImportPreview['created_count'] }} new
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-50 text-gray-600 border border-gray-200">
-                        <i class="fa-solid fa-check"></i> {{ $attributeImportPreview['existing_count'] }} already exist (will be reused)
-                    </span>
-                    @if($attributeImportPreview['error_count'] > 0)
-                        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                            <i class="fa-solid fa-triangle-exclamation"></i> {{ $attributeImportPreview['error_count'] }} row error{{ $attributeImportPreview['error_count'] === 1 ? '' : 's' }}
-                        </span>
-                    @endif
-                </div>
-
-                <div class="flex-1 overflow-y-auto space-y-2 pr-1">
-                    @foreach($attributeImportPreview['rows'] as $row)
-                        <div class="border border-gray-100 rounded-lg px-3 py-2">
-                            @if(isset($row['error']))
-                                <p class="text-xs text-red-600"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Line {{ $row['line'] }}: {{ $row['name'] }} — {{ $row['error'] }}</p>
-                            @else
-                                <p class="text-xs flex flex-wrap items-center gap-2">
-                                    <span class="{{ $row['status'] === 'existing' ? 'text-gray-500' : 'text-emerald-700 font-semibold' }}">{{ $row['name'] }}</span>
-                                    @if(isset($row['input_type']))
-                                        <span class="text-[10px] text-gray-400 uppercase font-semibold">{{ str_replace('_', ' ', $row['input_type']) }}</span>
-                                    @endif
-                                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {{ $row['status'] === 'would_create' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-500' }}">
-                                        {{ $row['status'] === 'would_create' ? 'Creates new' : 'Already exists' }}
-                                    </span>
-                                </p>
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
+                @include('backend.admin.catalog.builder._import-preview-rows', ['preview' => $attributeImportPreview, 'formId' => 'attribute-import-confirm'])
 
                 <div class="flex items-center justify-end gap-2 pt-4 mt-2 border-t border-gray-100 shrink-0">
                     <button type="button" @click="open = false" class="px-4 py-2 text-xs font-medium border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <form method="POST" action="{{ route('admin.catalog.attributes.import.store') }}">
+                    <form id="attribute-import-confirm" method="POST" action="{{ route('admin.catalog.attributes.import.store') }}">
                         @csrf
                         <button type="submit" class="btn-primary text-xs font-semibold px-4 py-2 rounded-lg">
                             <i class="fa-solid fa-check mr-1"></i> Confirm Import

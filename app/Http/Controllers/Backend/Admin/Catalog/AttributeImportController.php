@@ -26,10 +26,11 @@ class AttributeImportController extends Controller
     {
         $this->authorize('platform.attributes.manage');
 
-        $csv = "name,input_type,attribute_group,is_required,is_filterable,is_variant\n"
-            ."Voltage,number,Technical Specification,0,1,0\n"
-            ."Color,select,Physical Dimensions,0,1,1\n"
-            ."Certifications,multi_select,Warranty & Support,0,0,0\n";
+        // attribute_group must already exist; a blank input_type means single-line text.
+        $csv = "name,attribute_group,input_type,unit,placeholder,is_required,is_filterable,is_variant,allow_custom_value\n"
+            ."Model Number,Key Features,,,e.g. X200,0,0,0,0\n"
+            ."Voltage,Key Features,number,,,0,1,0,0\n"
+            ."Color,Key Features,select,,,0,1,1,1\n";
 
         return response($csv, 200, [
             'Content-Type' => 'text/csv',
@@ -69,10 +70,11 @@ class AttributeImportController extends Controller
 
         Session::forget(self::SESSION_KEY);
 
-        $summary = $service->import($rows);
+        $summary = $service->import($rows, (array) $request->input('create_anyway', []));
 
         return redirect()->route('admin.catalog.builder.attributes')
             ->with('success', "Import complete — {$summary['created_count']} attribute".($summary['created_count'] === 1 ? '' : 's')." created, {$summary['existing_count']} already existed."
+                .($summary['possible_count'] > 0 ? " {$summary['possible_count']} possible duplicate(s) skipped." : '')
                 .($summary['error_count'] > 0 ? " {$summary['error_count']} row(s) had errors and were skipped." : ''));
     }
 }

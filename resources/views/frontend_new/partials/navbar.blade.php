@@ -22,7 +22,7 @@
     <!-- Nav links -->
     <nav class="hidden lg:flex items-center gap-5 ml-1">
       <a href="{{ route('v2.products.index') }}" class="{{ request()->routeIs('v2.categories.*', 'v2.products.*') ? 'nav-link-active' : 'nav-link' }}">Products</a>
-      <a href="{{ route('v2.rfqs.index') }}" class="{{ request()->routeIs('v2.rfqs.*') ? 'nav-link-active' : 'nav-link' }}">RFQ</a>
+      {{-- <a href="{{ route('v2.rfqs.index') }}" class="{{ request()->routeIs('v2.rfqs.*') ? 'nav-link-active' : 'nav-link' }}">RFQ</a> --}}
       <a href="{{ route('v2.suppliers.index') }}" class="{{ request()->routeIs('v2.suppliers.*') ? 'nav-link-active' : 'nav-link' }}">Suppliers</a>
       <a href="{{ route('v2.blogs.index') }}" class="{{ request()->routeIs('v2.blogs.*') ? 'nav-link-active' : 'nav-link' }}">Blog</a>
       <a href="{{ route('v2.resources.index') }}" class="{{ request()->routeIs('v2.resources.*') ? 'nav-link-active' : 'nav-link' }}">Resources</a>

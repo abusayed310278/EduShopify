@@ -21,6 +21,7 @@ use App\Http\Controllers\Backend\Admin\Billing\SubscriptionPaymentController;
 use App\Http\Controllers\Backend\Admin\Billing\SubscriptionPlanController;
 use App\Http\Controllers\Backend\Admin\Catalog\AttributeController;
 use App\Http\Controllers\Backend\Admin\Catalog\AttributeGroupController;
+use App\Http\Controllers\Backend\Admin\Catalog\AttributeExportController;
 use App\Http\Controllers\Backend\Admin\Catalog\AttributeGroupImportController;
 use App\Http\Controllers\Backend\Admin\Catalog\AttributeImportController;
 use App\Http\Controllers\Backend\Admin\Catalog\AttributeValueImportController;
@@ -223,6 +224,11 @@ Route::middleware(['auth', 'verified', \App\Http\Middleware\EnsurePlatformAdmin:
             // Attribute Groups
             Route::resource('attribute-groups', AttributeGroupController::class)->except(['show']);
             Route::post('/attribute-groups/{attributeGroup}/toggle-active', [AttributeGroupController::class, 'toggleActive'])->name('attribute-groups.toggle-active');
+
+            // CSV exports: every column as stored, importable again without changing anything.
+            Route::get('/attribute-groups/export', [AttributeExportController::class, 'groups'])->name('attribute-groups.export');
+            Route::get('/attributes/export', [AttributeExportController::class, 'attributes'])->name('attributes.export');
+            Route::get('/attributes/values-export', [AttributeExportController::class, 'values'])->name('attributes.values-export');
 
             // Bulk attribute group import from a flat CSV (one group per row).
             Route::get('/attribute-groups/import/template', [AttributeGroupImportController::class, 'template'])->name('attribute-groups.import.template');

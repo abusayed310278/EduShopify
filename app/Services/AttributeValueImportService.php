@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Attribute;
 use App\Models\AttributeValue;
+use App\Support\Catalog\NameMatcher;
+use App\Support\CsvFile;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -40,35 +42,21 @@ class AttributeValueImportService
      */
     public function parseCsv(UploadedFile $file): array
     {
-        $handle = fopen($file->getRealPath(), 'r');
-        if (! $handle) {
-            throw ValidationException::withMessages(['file' => 'Could not read the uploaded file.']);
-        }
+        $csv = CsvFile::read($file);
 
-        $header = fgetcsv($handle);
-        if (! $header) {
-            fclose($handle);
-            throw ValidationException::withMessages(['file' => 'The file is empty.']);
-        }
-
-        $header = array_map(fn ($h) => strtolower(trim((string) $h)), $header);
-        $attributeCol = array_search('attribute_name', $header, true);
+        $attributeCol = array_search('attribute_name', $csv['header'], true);
         if ($attributeCol === false) {
-            fclose($handle);
             throw ValidationException::withMessages(['file' => 'The CSV must have an "attribute_name" column.']);
         }
-        $valueCol = array_search('value', $header, true);
+        $valueCol = array_search('value', $csv['header'], true);
         if ($valueCol === false) {
-            fclose($handle);
             throw ValidationException::withMessages(['file' => 'The CSV must have a "value" column.']);
         }
 
         $rows = [];
-        $lineNumber = 1;
-        while (($line = fgetcsv($handle)) !== false) {
-            $lineNumber++;
-            $attributeName = trim((string) ($line[$attributeCol] ?? ''));
-            $value = trim((string) ($line[$valueCol] ?? ''));
+        foreach ($csv['lines'] as [$lineNumber, $line]) {
+            $attributeName = CsvFile::cell($line, $attributeCol);
+            $value = CsvFile::cell($line, $valueCol);
 
             if ($attributeName === '' && $value === '') {
                 continue;
@@ -80,7 +68,6 @@ class AttributeValueImportService
                 'value' => $value,
             ];
         }
-        fclose($handle);
 
         if (empty($rows)) {
             throw ValidationException::withMessages(['file' => 'No usable rows found — every row was empty.']);
@@ -109,6 +96,7 @@ class AttributeValueImportService
 
     private function process(array $rows, bool $write): array
     {
+        $attributes = Attribute::all();
         $attributeCache = [];
         $nextSortOrderByAttribute = [];
         $seenValueKeys = [];
@@ -132,7 +120,9 @@ class AttributeValueImportService
 
             $attributeKey = mb_strtolower($attributeName);
             if (! array_key_exists($attributeKey, $attributeCache)) {
-                $attributeCache[$attributeKey] = Attribute::whereRaw('LOWER(name) = ?', [$attributeKey])->first();
+                // Exact name first, then ignoring spaces and symbols ("Wi-Fi" finds "WiFi").
+                $attributeCache[$attributeKey] = $attributes->first(fn (Attribute $a) => mb_strtolower($a->name) === $attributeKey)
+                    ?? $attributes->first(fn (Attribute $a) => NameMatcher::key($a->name) === NameMatcher::key($attributeName));
             }
             $attribute = $attributeCache[$attributeKey];
 

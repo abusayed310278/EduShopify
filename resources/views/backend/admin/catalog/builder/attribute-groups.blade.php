@@ -123,6 +123,9 @@
                 <a href="{{ route('admin.catalog.attribute-groups.import.template') }}" class="block mt-2 text-xs text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-download mr-1"></i> Download template
                 </a>
+                <a href="{{ route('admin.catalog.attribute-groups.export') }}" class="block mt-3 text-sm font-semibold px-4 py-2.5 rounded-lg w-full border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition">
+                    <i class="fa-solid fa-file-export text-xs mr-1.5"></i> Export Groups
+                </a>
             </div>
         </div>
     </div>
@@ -168,7 +171,8 @@
                     <code class="bg-gray-100 px-1 py-0.5 rounded text-[11px]">description</code> columns — one attribute
                     group per row, both required. Everything else is set automatically: new groups start active, are
                     appended after existing ones, and are stamped with who imported them.
-                    Groups that already exist (matched by name) are reused, never duplicated, so it's safe to re-upload the same file.
+                    Existing groups are never changed, and names are compared ignoring case, spaces and symbols, so it's safe
+                    to re-upload the same file. Very similar names are held back for you to review in the next step.
                 </p>
                 <div class="bg-gray-50 border border-gray-100 rounded-lg p-3 text-[11px] font-mono text-gray-600 leading-5">
                     name,description<br>
@@ -214,40 +218,11 @@
                     <button type="button" @click="open = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
                 </div>
 
-                <div class="py-4 flex items-center gap-4 shrink-0">
-                    <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <i class="fa-solid fa-plus"></i> {{ $groupImportPreview['created_count'] }} new
-                    </span>
-                    <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-50 text-gray-600 border border-gray-200">
-                        <i class="fa-solid fa-check"></i> {{ $groupImportPreview['existing_count'] }} already exist (will be reused)
-                    </span>
-                    @if($groupImportPreview['error_count'] > 0)
-                        <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                            <i class="fa-solid fa-triangle-exclamation"></i> {{ $groupImportPreview['error_count'] }} row error{{ $groupImportPreview['error_count'] === 1 ? '' : 's' }}
-                        </span>
-                    @endif
-                </div>
-
-                <div class="flex-1 overflow-y-auto space-y-2 pr-1">
-                    @foreach($groupImportPreview['rows'] as $row)
-                        <div class="border border-gray-100 rounded-lg px-3 py-2">
-                            @if(isset($row['error']))
-                                <p class="text-xs text-red-600"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Line {{ $row['line'] }}: {{ $row['name'] }} — {{ $row['error'] }}</p>
-                            @else
-                                <p class="text-xs flex flex-wrap items-center gap-2">
-                                    <span class="{{ $row['status'] === 'existing' ? 'text-gray-500' : 'text-emerald-700 font-semibold' }}">{{ $row['name'] }}</span>
-                                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full {{ $row['status'] === 'would_create' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-500' }}">
-                                        {{ $row['status'] === 'would_create' ? 'Creates new' : 'Already exists' }}
-                                    </span>
-                                </p>
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
+                @include('backend.admin.catalog.builder._import-preview-rows', ['preview' => $groupImportPreview, 'formId' => 'group-import-confirm'])
 
                 <div class="flex items-center justify-end gap-2 pt-4 mt-2 border-t border-gray-100 shrink-0">
                     <button type="button" @click="open = false" class="px-4 py-2 text-xs font-medium border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <form method="POST" action="{{ route('admin.catalog.attribute-groups.import.store') }}">
+                    <form id="group-import-confirm" method="POST" action="{{ route('admin.catalog.attribute-groups.import.store') }}">
                         @csrf
                         <button type="submit" class="btn-primary text-xs font-semibold px-4 py-2 rounded-lg">
                             <i class="fa-solid fa-check mr-1"></i> Confirm Import

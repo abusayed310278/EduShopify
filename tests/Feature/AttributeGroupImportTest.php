@@ -166,6 +166,51 @@ class AttributeGroupImportTest extends TestCase
         $this->assertSame(1, AttributeGroup::count());
     }
 
+    public function test_existing_groups_match_ignoring_symbols_and_a_blank_description_is_fine_for_them(): void
+    {
+        $this->seedBase();
+        $admin = $this->makeAdmin('svc-symbols@example.com');
+        AttributeGroup::create(['name' => 'Keyboard & TouchPad', 'slug' => 'keyboard-touchpad', 'is_active' => true]);
+
+        $summary = app(AttributeGroupImportService::class)->import([
+            ['line' => 2, 'name' => 'keyboard touchpad', 'description' => ''],
+        ], $admin->id);
+
+        $this->assertSame(1, $summary['existing_count']);
+        $this->assertSame(0, $summary['error_count']);
+        $this->assertSame(1, AttributeGroup::count());
+    }
+
+    public function test_a_similar_group_name_is_held_back_unless_confirmed(): void
+    {
+        $this->seedBase();
+        $admin = $this->makeAdmin('svc-similar@example.com');
+        AttributeGroup::create(['name' => 'Key Features', 'slug' => 'key-features', 'is_active' => true]);
+        $rows = [['line' => 2, 'name' => 'Key Feature', 'description' => 'A typo?']];
+        $service = app(AttributeGroupImportService::class);
+
+        $skipped = $service->import($rows, $admin->id);
+        $this->assertSame(1, $skipped['possible_count']);
+        $this->assertSame('Key Features', $skipped['rows'][0]['similar_to']);
+        $this->assertSame(1, AttributeGroup::count());
+
+        $confirmed = $service->import($rows, $admin->id, [2]);
+        $this->assertSame(1, $confirmed['created_count']);
+        $this->assertSame(2, AttributeGroup::count());
+    }
+
+    public function test_a_soft_deleted_group_does_not_break_the_import_with_a_slug_clash(): void
+    {
+        $this->seedBase();
+        $admin = $this->makeAdmin('svc-trashed@example.com');
+        AttributeGroup::create(['name' => 'Display', 'slug' => 'display', 'is_active' => true])->delete();
+
+        $summary = app(AttributeGroupImportService::class)->import([['line' => 2, 'name' => 'Display', 'description' => 'Screen.']], $admin->id);
+
+        $this->assertSame(1, $summary['created_count']);
+        $this->assertDatabaseHas('attribute_groups', ['name' => 'Display', 'slug' => 'display-2', 'deleted_at' => null]);
+    }
+
     public function test_preview_does_not_write_to_the_database(): void
     {
         $this->seedBase();
