@@ -52,11 +52,14 @@ Route::prefix('buyer')->group(function () {
     // Marketplace & Suppliers
     Route::prefix('marketplace')->group(function () {
         Route::get('/products', [MarketplaceController::class, 'products']);
+        Route::get('/products/{id}', [MarketplaceController::class, 'productDetail']);
         Route::get('/services', [MarketplaceController::class, 'services']);
         Route::get('/categories', [MarketplaceController::class, 'categories']);
     });
     Route::get('/suppliers', [MarketplaceController::class, 'suppliers']);
+    Route::get('/suppliers/{id}', [MarketplaceController::class, 'supplierDetail']);
     Route::get('/blog/posts', [MarketplaceController::class, 'blogPosts']);
+    Route::get('/blog/posts/{id}', [MarketplaceController::class, 'blogPostDetail']);
     Route::get('/resources', [MarketplaceController::class, 'resources']);
     Route::get('/privacy-policy', [MarketplaceController::class, 'privacyPolicy']);
     Route::get('/terms-policy', [MarketplaceController::class, 'termsPolicy']);

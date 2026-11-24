@@ -11,6 +11,7 @@ use App\Models\Category;
 use App\Models\ContactInquiry;
 use App\Models\Listing;
 use App\Models\Quotation;
+use App\Models\Review;
 use App\Models\SavedItem;
 use App\Models\SupplierProfile;
 use App\Models\Rfq;
@@ -117,6 +118,186 @@ class MarketplaceController extends Controller
             'current_page' => $listings->currentPage(),
             'last_page'    => $listings->lastPage(),
             'total'        => $listings->total(),
+        ]);
+    }
+
+    public function productDetail(Request $request, $idOrSlug): JsonResponse
+    {
+        $user = $this->currentUser($request);
+
+        $listing = Listing::products()
+            ->where(function ($q) use ($idOrSlug) {
+                if (is_numeric($idOrSlug)) {
+                    $q->where('id', $idOrSlug)->orWhere('slug', $idOrSlug);
+                } else {
+                    $q->where('slug', $idOrSlug);
+                }
+            })
+            ->whereIn('approval_status', ['published', 'approved'])
+            ->with([
+                'mainCategory',
+                'brand',
+                'unit',
+                'primaryImage',
+                'media',
+                'supplierAccount.supplierProfile.country',
+                'attributeValues.attribute.unit',
+                'attributeValues.attributeValue',
+                'allTierPrices',
+                'productReviews' => fn ($q) => $q->published()->with('buyerAccount.buyerProfile')->latest('published_at'),
+            ])
+            ->first();
+
+        if (!$listing) {
+            return response()->json(['message' => 'Product not found'], 404);
+        }
+
+        // Images gallery
+        $images = [];
+        $gallery = $listing->getMedia('gallery');
+        if ($gallery->isEmpty() && $listing->primaryImage) {
+            $gallery = collect([$listing->primaryImage]);
+        }
+        if ($gallery->isEmpty() && $listing->media->isNotEmpty()) {
+            $gallery = $listing->media->filter(fn ($m) => str_starts_with($m->mime_type ?? '', 'image/'));
+        }
+        foreach ($gallery as $m) {
+            $url = $m->getUrl();
+            $parsed = parse_url($url);
+            $path = $parsed['path'] ?? '';
+            $images[] = $request->schemeAndHttpHost() . $path;
+        }
+
+        // Videos
+        $posters = $listing->getMedia('video_posters')->keyBy('id');
+        $videos = $listing->getMedia('videos')->map(fn ($video) => [
+            'url'    => $video->getUrl(),
+            'poster' => ($poster = $posters->get($video->getCustomProperty('poster_id'))) ? $poster->getUrl() : null,
+        ])->values()->all();
+
+        // Tier prices
+        $tierPrices = $listing->allTierPrices->map(fn ($tier) => [
+            'min_quantity' => (int) $tier->min_quantity,
+            'max_quantity' => $tier->max_quantity ? (int) $tier->max_quantity : null,
+            'unit_price'   => (float) $tier->unit_price,
+        ])->values()->all();
+
+        // Specifications
+        $specifications = [];
+        foreach ($listing->attributeValues as $spec) {
+            $attrName = $spec->attribute?->name ?? 'Attribute';
+            if ($spec->attribute?->unit) {
+                $unitSymbol = $spec->attribute->unit->symbol ?? $spec->attribute->unit->name;
+                $attrName .= " ($unitSymbol)";
+            }
+            $val = method_exists($spec, 'formattedValue')
+                ? $spec->formattedValue()
+                : ($spec->attributeValue?->value ?? $spec->text_value ?? $spec->value ?? '');
+            $specifications[] = [
+                'name'  => $attrName,
+                'value' => (string) $val,
+            ];
+        }
+
+        // Supplier info
+        $supplierProfile = $listing->supplierAccount?->supplierProfile;
+        $supplierName = $supplierProfile?->display_name
+            ?? $supplierProfile?->legal_name
+            ?? $listing->supplierAccount?->display_name
+            ?? 'Educational Supplier';
+
+        $dealsCount = Review::where('supplier_account_id', $listing->supplier_account_id)
+            ->purchaseExperience()
+            ->published()
+            ->count();
+
+        $yearsActive = $supplierProfile?->founded_year
+            ? now()->year - $supplierProfile->founded_year
+            : null;
+
+        $reviews = $listing->productReviews->map(fn ($rev) => [
+            'id'         => $rev->id,
+            'rating'     => (float) $rev->rating,
+            'title'      => $rev->title ?? '',
+            'comment'    => $rev->comment ?? '',
+            'buyer_name' => $rev->buyerAccount?->buyerProfile?->display_name ?? 'Verified Buyer',
+            'created_at' => $rev->published_at?->format('M d, Y') ?? $rev->created_at?->format('M d, Y'),
+        ])->values()->all();
+
+        $isSaved = false;
+        if ($user) {
+            $isSaved = SavedItem::where('account_id', $user->accountMember?->account_id ?? 1)
+                ->where('item_type', 'listing')
+                ->where('item_id', $listing->id)
+                ->exists();
+        }
+
+        // Related products
+        $relatedProducts = Listing::products()
+            ->where('main_category_id', $listing->main_category_id)
+            ->where('id', '!=', $listing->id)
+            ->whereIn('approval_status', ['published', 'approved'])
+            ->with(['mainCategory', 'supplierAccount.supplierProfile', 'media'])
+            ->limit(4)
+            ->get()
+            ->map(function ($rel) use ($request) {
+                $mediaItem = $rel->media->first(fn ($m) => str_starts_with($m->mime_type ?? '', 'image/')) ?? $rel->media->first();
+                $img = null;
+                if ($mediaItem && !str_ends_with(strtolower($mediaItem->file_name ?? ''), '.mp4')) {
+                    $url = $mediaItem->getUrl();
+                    $parsed = parse_url($url);
+                    $path = $parsed['path'] ?? '';
+                    $img = $request->schemeAndHttpHost() . $path;
+                }
+                return [
+                    'id'            => $rel->id,
+                    'name'          => $rel->name,
+                    'slug'          => $rel->slug ?? ('item-' . $rel->id),
+                    'base_price'    => (float) ($rel->base_price ?? 0),
+                    'currency_code' => $rel->currency_code ?? 'USD',
+                    'image_url'     => $img,
+                    'rating'        => (float) ($rel->product_rating ?? 4.8),
+                    'supplier_name' => $rel->supplierAccount?->supplierProfile?->display_name ?? 'Educational Supplier',
+                ];
+            })->values()->all();
+
+        $priceMin = $listing->allTierPrices->min('unit_price') ?? $listing->base_price;
+        $priceMax = $listing->allTierPrices->max('unit_price') ?? $listing->base_price;
+
+        return response()->json([
+            'id'                     => $listing->id,
+            'title'                  => $listing->name,
+            'name'                   => $listing->name,
+            'slug'                   => $listing->slug ?? ('item-' . $listing->id),
+            'sku'                    => $listing->sku ?? ('SKU-' . $listing->id),
+            'listing_type'           => 'product',
+            'category_name'          => $listing->mainCategory?->name ?? 'Classroom Supplies',
+            'category_id'            => $listing->main_category_id,
+            'base_price'             => (float) ($listing->base_price ?? 0),
+            'price_min'              => (float) ($priceMin ?? 0),
+            'price_max'              => (float) ($priceMax ?? 0),
+            'currency_code'          => $listing->currency_code ?? 'USD',
+            'minimum_order_quantity' => (int) ($listing->min_order_quantity ?? 1),
+            'unit_name'              => $listing->unit?->name ?? 'Piece',
+            'brand_name'             => $listing->brand?->name ?? 'Standard Academic',
+            'supplier_id'            => $listing->supplier_account_id,
+            'supplier_name'          => $supplierName,
+            'supplier_country'       => $supplierProfile?->country?->name ?? 'Global',
+            'supplier_city'          => $supplierProfile?->city ?? '',
+            'supplier_verified'      => (bool) ($supplierProfile?->is_verified ?? true),
+            'deals_count'            => $dealsCount,
+            'years_active'           => $yearsActive,
+            'image_url'              => $images[0] ?? null,
+            'images'                 => $images,
+            'videos'                 => $videos,
+            'rating'                 => (float) ($listing->product_rating ?? 4.8),
+            'reviews_count'          => (int) ($listing->product_reviews_count ?? count($reviews)),
+            'description'            => $listing->description ?? '',
+            'specifications'         => $specifications,
+            'tier_prices'            => $tierPrices,
+            'reviews'                => $reviews,
+            'related_products'       => $relatedProducts,
+            'is_saved'               => $isSaved,
         ]);
     }
 
@@ -240,6 +421,199 @@ class MarketplaceController extends Controller
         ]);
     }
 
+    public function supplierDetail(Request $request, $idOrSlug): JsonResponse
+    {
+        $user = $this->currentUser($request);
+
+        $supplier = SupplierProfile::where(function ($q) use ($idOrSlug) {
+            if (is_numeric($idOrSlug)) {
+                $q->where('id', $idOrSlug)->orWhere('account_id', $idOrSlug)->orWhere('slug', $idOrSlug);
+            } else {
+                $q->where('slug', $idOrSlug);
+            }
+        })
+        ->with([
+            'country',
+            'city',
+            'account.supplierTypes',
+            'account.locations.city',
+            'account.locations.country',
+            'account.socialLinks.platform',
+            'businessHours',
+            'gallery' => fn ($q) => $q->where('is_active', true)->orderBy('sort_order'),
+            'videos' => fn ($q) => $q->where('is_active', true)->orderBy('sort_order'),
+        ])
+        ->first();
+
+        if (!$supplier) {
+            return response()->json(['message' => 'Supplier not found'], 404);
+        }
+
+        $logoUrl = $supplier->logo ? $request->schemeAndHttpHost() . '/storage/' . ltrim($supplier->logo, '/') : null;
+        $bannerUrl = $supplier->banner ? $request->schemeAndHttpHost() . '/storage/' . ltrim($supplier->banner, '/') : null;
+        $profilePhotoUrl = $supplier->profile_photo ? $request->schemeAndHttpHost() . '/storage/' . ltrim($supplier->profile_photo, '/') : null;
+
+        $primaryLocation = $supplier->account?->locations?->first();
+        $locationText = null;
+        if ($primaryLocation && $primaryLocation->city?->name) {
+            $locationText = $primaryLocation->city->name . ($primaryLocation->country?->name ? ', ' . $primaryLocation->country->name : '');
+        } elseif ($supplier->website) {
+            $locationText = $supplier->website;
+        } else {
+            $locationText = 'Verified Academic Supplier';
+        }
+
+        $products = Listing::products()
+            ->where('supplier_account_id', $supplier->account_id)
+            ->whereIn('approval_status', ['published', 'approved'])
+            ->with(['mainCategory', 'media'])
+            ->limit(12)
+            ->get()
+            ->map(function ($l) use ($request) {
+                $mediaItem = $l->media->first(fn ($m) => str_starts_with($m->mime_type ?? '', 'image/')) ?? $l->media->first();
+                $imageUrl = null;
+                if ($mediaItem && !str_ends_with(strtolower($mediaItem->file_name ?? ''), '.mp4')) {
+                    $url = $mediaItem->getUrl();
+                    $parsed = parse_url($url);
+                    $path = $parsed['path'] ?? '';
+                    $imageUrl = $request->schemeAndHttpHost() . $path;
+                }
+                return [
+                    'id'                     => $l->id,
+                    'name'                   => $l->name,
+                    'title'                  => $l->name,
+                    'slug'                   => $l->slug ?? ('item-' . $l->id),
+                    'base_price'             => (float) ($l->base_price ?? 0),
+                    'currency_code'          => $l->currency_code ?? 'USD',
+                    'category_name'          => $l->mainCategory?->name ?? 'Classroom Supplies',
+                    'minimum_order_quantity' => (int) ($l->min_order_quantity ?? 1),
+                    'unit_name'              => 'Piece',
+                    'image_url'              => $imageUrl,
+                    'rating'                 => (float) ($l->product_rating ?? 4.8),
+                ];
+            })->values()->all();
+
+        $services = [];
+        if ($supplier->account) {
+            $services = $supplier->account->services()
+                ->where('status', 'active')
+                ->orderBy('sort_order')
+                ->get()
+                ->map(fn ($srv) => [
+                    'id'          => $srv->id,
+                    'name'        => $srv->name,
+                    'title'       => $srv->name,
+                    'description' => $srv->description ?? '',
+                ])->values()->all();
+        }
+
+        $certifications = [];
+        $achievements = [];
+        if ($supplier->account) {
+            $certifications = $supplier->account->certifications()
+                ->approved()
+                ->latest()
+                ->get()
+                ->map(fn ($c) => [
+                    'id'                 => $c->id,
+                    'name'               => $c->name,
+                    'issuer'             => $c->issuing_organization ?? $c->issuer ?? '',
+                    'certificate_number' => $c->certificate_number ?? '',
+                    'issue_date'         => $c->issue_date ? $c->issue_date->format('M Y') : null,
+                ])->values()->all();
+
+            $achievements = $supplier->account->accountAchievements()
+                ->approved()
+                ->with('achievement')
+                ->get()
+                ->pluck('achievement')
+                ->filter()
+                ->map(fn ($ach) => [
+                    'id'          => $ach->id,
+                    'name'        => $ach->name,
+                    'badge_label' => method_exists($ach, 'badgeLabel') ? $ach->badgeLabel() : $ach->name,
+                ])->values()->all();
+        }
+
+        $reviews = Review::where('supplier_account_id', $supplier->account_id)
+            ->supplier()
+            ->published()
+            ->with('buyerAccount.buyerProfile')
+            ->latest('published_at')
+            ->limit(10)
+            ->get()
+            ->map(fn ($r) => [
+                'id'         => $r->id,
+                'rating'     => (float) $r->rating,
+                'title'      => $r->title ?? '',
+                'comment'    => $r->comment ?? '',
+                'buyer_name' => $r->buyerAccount?->buyerProfile?->display_name ?? 'Verified Institution',
+                'created_at' => $r->published_at?->format('M d, Y') ?? $r->created_at?->format('M d, Y'),
+            ])->values()->all();
+
+        $rfqsCompleted = Quotation::where('supplier_account_id', $supplier->account_id)
+            ->where('status', 'awarded')
+            ->count();
+
+        $yearsInBusiness = $supplier->founded_year ? now()->year - $supplier->founded_year : null;
+        $avgResponseHours = $supplier->average_response_minutes ? round($supplier->average_response_minutes / 60, 1) : null;
+        $isWorldwide = method_exists($supplier, 'isWorldwideSupplier') ? $supplier->isWorldwideSupplier() : false;
+
+        $gallery = $supplier->gallery->map(fn ($g) => [
+            'id'       => $g->id,
+            'caption'  => $g->caption ?? '',
+            'url'      => $request->schemeAndHttpHost() . '/storage/' . ltrim($g->file_path, '/'),
+        ])->values()->all();
+
+        $isSaved = false;
+        if ($user) {
+            $isSaved = SavedItem::where('account_id', $user->accountMember?->account_id ?? 1)
+                ->where('item_type', 'supplier')
+                ->where('item_id', $supplier->account_id)
+                ->exists();
+        }
+
+        $supplierTypes = $supplier->account?->supplierTypes?->pluck('name')->values()->all() ?? [];
+
+        return response()->json([
+            'id'                       => $supplier->id,
+            'account_id'               => $supplier->account_id,
+            'display_name'             => $supplier->display_name ?? $supplier->legal_name ?? 'Educational Supplier',
+            'company_name'             => $supplier->legal_name ?? $supplier->display_name ?? 'Educational Supplier',
+            'slug'                     => $supplier->slug ?? ('supplier-' . $supplier->id),
+            'rating'                   => (float) ($supplier->rating ?? 4.9),
+            'reviews_count'            => (int) ($supplier->reviews_count ?? count($reviews)),
+            'is_verified'              => $supplier->account?->status === 'active',
+            'verified'                 => $supplier->account?->status === 'active',
+            'logo_url'                 => $logoUrl ?? $profilePhotoUrl,
+            'banner_url'               => $bannerUrl,
+            'location'                 => $locationText,
+            'country'                  => $supplier->country?->name ?? 'Global',
+            'city'                     => $supplier->city?->name ?? '',
+            'contact_email'            => $supplier->contact_email,
+            'contact_phone'            => $supplier->contact_phone,
+            'website'                  => $supplier->website,
+            'description'              => $supplier->description ?? '',
+            'about'                    => $supplier->about ?? $supplier->description ?? '',
+            'founded_year'             => $supplier->founded_year,
+            'years_in_business'        => $yearsInBusiness,
+            'response_rate'            => $supplier->quotation_response_rate !== null ? round((float) $supplier->quotation_response_rate) : 98,
+            'avg_response_hours'       => $avgResponseHours ?? 2.5,
+            'rfqs_completed'           => $rfqsCompleted,
+            'is_worldwide'             => $isWorldwide,
+            'countries_served_display' => $isWorldwide ? 'Worldwide' : '15+',
+            'supplier_types'           => $supplierTypes,
+            'products'                 => $products,
+            'products_count'           => count($products),
+            'services'                 => $services,
+            'certifications'           => $certifications,
+            'achievements'             => $achievements,
+            'gallery'                  => $gallery,
+            'reviews'                  => $reviews,
+            'is_saved'                 => $isSaved,
+        ]);
+    }
+
     public function blogPosts(Request $request): JsonResponse
     {
         $search = $request->query('q') ?? $request->query('search');
@@ -289,6 +663,73 @@ class MarketplaceController extends Controller
         ]);
     }
 
+    public function blogPostDetail(Request $request, $idOrSlug): JsonResponse
+    {
+        $post = BlogPost::with(['category', 'account', 'authorUser'])
+            ->where(function ($q) use ($idOrSlug) {
+                if (is_numeric($idOrSlug)) {
+                    $q->where('id', $idOrSlug)->orWhere('slug', $idOrSlug);
+                } else {
+                    $q->where('slug', $idOrSlug);
+                }
+            })
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$post) {
+            return response()->json(['message' => 'Blog post not found'], 404);
+        }
+
+        // Increment views count silently
+        $post->increment('views_count');
+
+        $imageUrl = null;
+        if ($post->cover_image) {
+            $imageUrl = $request->schemeAndHttpHost() . '/storage/' . ltrim($post->cover_image, '/');
+        }
+
+        $relatedPosts = BlogPost::where('id', '!=', $post->id)
+            ->where('status', 'approved')
+            ->when($post->category_id, fn ($q) => $q->where('category_id', $post->category_id))
+            ->limit(3)
+            ->get()
+            ->map(function ($rel) use ($request) {
+                $relImg = null;
+                if ($rel->cover_image) {
+                    $relImg = $request->schemeAndHttpHost() . '/storage/' . ltrim($rel->cover_image, '/');
+                }
+                return [
+                    'id'                   => $rel->id,
+                    'title'                => $rel->title,
+                    'slug'                 => $rel->slug,
+                    'excerpt'              => $rel->excerpt ?? Str::limit(strip_tags($rel->content ?? ''), 100),
+                    'tag'                  => $rel->category?->name ?? 'Article',
+                    'image_url'            => $relImg,
+                    'reading_time_minutes' => (int) ($rel->reading_time_minutes ?? 4),
+                    'views_count'          => (int) ($rel->views_count ?? 0),
+                    'published_at'         => $rel->published_at?->toIso8601String() ?? $rel->created_at?->toIso8601String(),
+                ];
+            })->values()->all();
+
+        return response()->json([
+            'id'                   => $post->id,
+            'title'                => $post->title,
+            'slug'                 => $post->slug,
+            'excerpt'              => $post->excerpt ?? Str::limit(strip_tags($post->content ?? ''), 160),
+            'content'              => $post->content ?? '',
+            'tag'                  => $post->category?->name ?? 'Procurement Insight',
+            'category_name'        => $post->category?->name ?? 'Procurement Insight',
+            'category_id'          => $post->category_id,
+            'image_url'            => $imageUrl,
+            'reading_time_minutes' => (int) ($post->reading_time_minutes ?? 5),
+            'views_count'          => (int) ($post->views_count ?? 0),
+            'author_name'          => $post->authorUser?->name ?? $post->account?->display_name ?? 'EduShopify Editorial',
+            'author_role'          => 'Educational Procurement Specialist',
+            'published_at'         => $post->published_at?->toIso8601String() ?? $post->created_at?->toIso8601String(),
+            'related_posts'        => $relatedPosts,
+        ]);
+    }
+
     public function resources(Request $request): JsonResponse
     {
         $resources = [
@@ -298,7 +739,7 @@ class MarketplaceController extends Controller
                 'subtitle'  => 'Complete planning guide, equipment checklist, and safety standards.',
                 'tag'       => 'STEM Education',
                 'image_url' => 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80',
-                'route'     => '/marketplace',
+                'route'     => '/resources',
             ],
             [
                 'id'        => 2,
@@ -306,7 +747,7 @@ class MarketplaceController extends Controller
                 'subtitle'  => 'Resolution, touch capability, software licensing, and TCO considerations.',
                 'tag'       => 'Smart Classroom',
                 'image_url' => 'https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=400&q=80',
-                'route'     => '/marketplace',
+                'route'     => '/resources',
             ],
             [
                 'id'        => 3,
@@ -322,7 +763,7 @@ class MarketplaceController extends Controller
                 'subtitle'  => 'Every supplier undergoes strict institutional compliance checks.',
                 'tag'       => 'Trust & Safety',
                 'image_url' => 'https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=400&auto=format&fit=crop&q=80',
-                'route'     => '/marketplace',
+                'route'     => '/resources',
             ],
             [
                 'id'        => 5,
@@ -330,7 +771,7 @@ class MarketplaceController extends Controller
                 'subtitle'  => 'Strategies for maximizing your annual institutional procurement budget.',
                 'tag'       => 'Cost Optimization',
                 'image_url' => 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&auto=format&fit=crop&q=80',
-                'route'     => '/marketplace',
+                'route'     => '/resources',
             ],
             [
                 'id'        => 6,
@@ -338,11 +779,249 @@ class MarketplaceController extends Controller
                 'subtitle'  => 'Safely introducing artificial intelligence kits into K-12 classrooms.',
                 'tag'       => 'AI & Technology',
                 'image_url' => 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=400&q=80',
-                'route'     => '/marketplace',
+                'route'     => '/resources',
             ],
         ];
 
-        return response()->json(['data' => $resources]);
+        $categories = [
+            [
+                'id'          => 'buyer-guides',
+                'title'       => 'Buyer Guides',
+                'count'       => '120+ Guides',
+                'description' => 'In-depth guides to streamline institutional purchasing',
+                'icon'        => 'menu_book',
+                'color'       => '#2563eb',
+                'bg_color'    => '#eff6ff',
+            ],
+            [
+                'id'          => 'procurement-insights',
+                'title'       => 'Procurement Insights',
+                'count'       => '85+ Articles',
+                'description' => 'Data-driven trends, spending reports & market analysis',
+                'icon'        => 'insights',
+                'color'       => '#9333ea',
+                'bg_color'    => '#faf5ff',
+            ],
+            [
+                'id'          => 'product-launches',
+                'title'       => 'Product Launches',
+                'count'       => '60+ Updates',
+                'description' => 'Latest innovations & product releases in education',
+                'icon'        => 'rocket_launch',
+                'color'       => '#d97706',
+                'bg_color'    => '#fffbeb',
+            ],
+            [
+                'id'          => 'education-news',
+                'title'       => 'Education News',
+                'count'       => '240+ Stories',
+                'description' => 'Policy updates, global developments & industry shifts',
+                'icon'        => 'newspaper',
+                'color'       => '#e11d48',
+                'bg_color'    => '#fff1f2',
+            ],
+            [
+                'id'          => 'events-exhibitions',
+                'title'       => 'Events & Exhibitions',
+                'count'       => '50+ Global',
+                'description' => 'Global conferences, expos & trade fairs for educators',
+                'icon'        => 'event',
+                'color'       => '#059669',
+                'bg_color'    => '#ecfdf5',
+            ],
+            [
+                'id'          => 'rfq-templates',
+                'title'       => 'RFQ Templates',
+                'count'       => '350+ Files',
+                'description' => 'Ready-to-use procurement templates & specification checklists',
+                'icon'        => 'description',
+                'color'       => '#0d9488',
+                'bg_color'    => '#f0fdfa',
+            ],
+            [
+                'id'          => 'case-studies',
+                'title'       => 'Case Studies',
+                'count'       => '45+ Stories',
+                'description' => 'Real-world stories of schools transforming learning with tech',
+                'icon'        => 'auto_stories',
+                'color'       => '#4f46e5',
+                'bg_color'    => '#eef2ff',
+            ],
+        ];
+
+        $featuredGuides = [
+            [
+                'id'                   => 1,
+                'title'                => 'How to Build a Future-Ready STEM Lab',
+                'subtitle'             => 'Complete planning guide, equipment list, safety standards and lab layout tips.',
+                'tag'                  => 'STEM Education',
+                'reading_time_minutes' => 12,
+                'image_url'            => 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+            ],
+            [
+                'id'                   => 2,
+                'title'                => 'Interactive Display Buying Guide for Schools',
+                'subtitle'             => 'Resolution, touch capability, software licensing, warranty and total cost of ownership.',
+                'tag'                  => 'Smart Classroom',
+                'reading_time_minutes' => 9,
+                'image_url'            => 'https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=600&q=80',
+            ],
+            [
+                'id'                   => 6,
+                'title'                => 'AI in Education: Implementation Guide',
+                'subtitle'             => 'Step-by-step roadmap to integrate artificial intelligence tools safely into classrooms.',
+                'tag'                  => 'AI & Technology',
+                'reading_time_minutes' => 15,
+                'image_url'            => 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=600&q=80',
+            ],
+        ];
+
+        $latestInsights = [
+            [
+                'id'                   => 101,
+                'title'                => 'Top 10 Education Procurement Trends in 2026',
+                'subtitle'             => 'Key trends shaping institutional buying, digital adoption, and multi-vendor contracts.',
+                'tag'                  => 'Procurement Trends',
+                'reading_time_minutes' => 8,
+                'image_url'            => 'https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=600&q=80',
+            ],
+            [
+                'id'                   => 102,
+                'title'                => 'Most Requested Products in RFQ Marketplace',
+                'subtitle'             => 'Aggregated insights from 10,000+ institution tenders posted in Q1 2026.',
+                'tag'                  => 'Market Trends',
+                'reading_time_minutes' => 6,
+                'image_url'            => 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=600&q=80',
+            ],
+            [
+                'id'                   => 103,
+                'title'                => 'Global Education Spending Report 2026',
+                'subtitle'             => 'Country-wise allocation, STEM stimulus packages, and edtech infrastructure forecasts.',
+                'tag'                  => 'Financial Report',
+                'reading_time_minutes' => 10,
+                'image_url'            => 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=600&q=80',
+            ],
+        ];
+
+        $upcomingEvents = [
+            [
+                'id'          => 1,
+                'name'        => 'BETT London 2026',
+                'short_code'  => 'BETT',
+                'location'    => 'London, UK',
+                'date_range'  => '22 - 24 Jan 2026',
+                'description' => 'The world’s leading education technology community exhibition.',
+                'badge_color' => '#059669',
+            ],
+            [
+                'id'          => 2,
+                'name'        => 'GESS Dubai 2026',
+                'short_code'  => 'GESS',
+                'location'    => 'Dubai, UAE',
+                'date_range'  => '11 - 13 Feb 2026',
+                'description' => 'Global educational supplies & solutions exhibition for MENA region.',
+                'badge_color' => '#2563eb',
+            ],
+            [
+                'id'          => 3,
+                'name'        => 'ISE Barcelona 2026',
+                'short_code'  => 'ISE',
+                'location'    => 'Barcelona, Spain',
+                'date_range'  => '03 - 06 Feb 2026',
+                'description' => 'Integrated Systems Europe audio-visual & smart education summit.',
+                'badge_color' => '#d97706',
+            ],
+            [
+                'id'          => 4,
+                'name'        => 'ISTE Live 2026',
+                'short_code'  => 'ISTE',
+                'location'    => 'San Antonio, USA',
+                'date_range'  => '29 Jun - 01 Jul 2026',
+                'description' => 'International Society for Technology in Education annual conference.',
+                'badge_color' => '#9333ea',
+            ],
+        ];
+
+        $rfqTemplates = [
+            [
+                'id'          => 1,
+                'title'       => 'STEM Lab RFQ Template',
+                'description' => 'Customizable specifications checklist for robotics, 3D printers, and sensors.',
+                'category'    => 'STEM & Robotics',
+                'file_format' => 'PDF / DOCX',
+                'file_size'   => '1.8 MB',
+            ],
+            [
+                'id'          => 2,
+                'title'       => 'Interactive Display RFQ Template',
+                'description' => 'Technical specifications for 65"-86" 4K interactive panels and wall mounts.',
+                'category'    => 'Smart Classroom',
+                'file_format' => 'PDF / DOCX',
+                'file_size'   => '1.2 MB',
+            ],
+            [
+                'id'          => 3,
+                'title'       => 'Computer Lab RFQ Template',
+                'description' => 'Procurement requirements for student PCs, server rack, and networking switches.',
+                'category'    => 'IT Infrastructure',
+                'file_format' => 'PDF / DOCX',
+                'file_size'   => '2.1 MB',
+            ],
+            [
+                'id'          => 4,
+                'title'       => 'Science Lab RFQ Template',
+                'description' => 'Comprehensive procurement checklist for glassware, fume hoods, and safety gear.',
+                'category'    => 'Science Equipment',
+                'file_format' => 'PDF / DOCX',
+                'file_size'   => '1.5 MB',
+            ],
+        ];
+
+        $stats = [
+            'guides_count'       => '1,250+',
+            'templates_count'    => '350+',
+            'free_access'        => '100%',
+            'global_exhibitions' => '50+',
+        ];
+
+        $features = [
+            [
+                'title'       => 'Expert Content',
+                'description' => 'Created by industry experts and education professionals',
+                'icon'        => 'verified',
+            ],
+            [
+                'title'       => 'Free & Accessible',
+                'description' => 'All resources are free to access and download',
+                'icon'        => 'lock_open',
+            ],
+            [
+                'title'       => 'Practical & Actionable',
+                'description' => 'Real-world insights you can implement immediately',
+                'icon'        => 'lightbulb',
+            ],
+            [
+                'title'       => 'Global Perspective',
+                'description' => 'Insights from 85+ countries and global education market',
+                'icon'        => 'public',
+            ],
+            [
+                'title'       => 'Trusted by Thousands',
+                'description' => 'Used by schools, universities and buyers worldwide',
+                'icon'        => 'groups',
+            ],
+        ];
+
+        return response()->json([
+            'data'            => $resources,
+            'categories'      => $categories,
+            'featured_guides' => $featuredGuides,
+            'latest_insights' => $latestInsights,
+            'upcoming_events' => $upcomingEvents,
+            'rfq_templates'   => $rfqTemplates,
+            'stats'           => $stats,
+            'features'        => $features,
+        ]);
     }
 
     public function savedItems(Request $request): JsonResponse
