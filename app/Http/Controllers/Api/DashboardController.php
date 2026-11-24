@@ -39,68 +39,70 @@ class DashboardController extends Controller
             ->whereIn('status', ['completed', 'shipped', 'delivered'])
             ->sum('grand_total');
 
-        if ($totalSpend <= 0) {
-            $totalSpend = 48500.00;
-        }
-
-        $monthlyBudgetTotal = 75000.00;
+        $monthlyBudgetTotal = 0.00;
         if ($account->buyerProfile?->annual_procurement_budget) {
             $monthlyBudgetTotal = round($account->buyerProfile->annual_procurement_budget / 12, 2);
         }
 
         $currency = $account->currency_code ?? 'USD';
 
-        $urgentAlerts = [
-            [
-                'id'      => 'alt-1',
-                'title'   => 'Award Decision Required',
-                'message' => 'Supplier quotations ready for review on Science Lab Microscopes.',
+        $urgentAlerts = [];
+        if ($pendingQuotationsCount > 0) {
+            $urgentAlerts[] = [
+                'id'      => 'alt-rfq-review',
+                'title'   => 'Quotations Ready for Review',
+                'message' => "You have {$pendingQuotationsCount} quotation(s) awaiting your evaluation.",
                 'type'    => 'warning',
-                'route'   => '/procurement',
-            ],
-            [
-                'id'      => 'alt-2',
-                'title'   => 'Delivery Out for Delivery',
-                'message' => 'Purchase order PO-2026-0842 is en route to Central Receiving Dock.',
-                'type'    => 'info',
-                'route'   => '/procurement',
-            ],
-        ];
-
-        $categories = Category::limit(3)->pluck('name')->toArray();
-        if (empty($categories)) {
-            $categories = ['Classroom Technology', 'Lab & STEM Equipment', 'Textbooks & Curriculum'];
+                'route'   => '/quotations',
+            ];
         }
 
-        $spendingBreakdown = [
-            [
-                'category_name' => $categories[0] ?? 'Classroom Technology',
-                'amount'        => round($totalSpend * 0.50, 2),
-                'percentage'    => 0.50,
-            ],
-            [
-                'category_name' => $categories[1] ?? 'Lab & STEM Equipment',
-                'amount'        => round($totalSpend * 0.30, 2),
-                'percentage'    => 0.30,
-            ],
-            [
-                'category_name' => $categories[2] ?? 'Textbooks & Curriculum',
-                'amount'        => round($totalSpend * 0.20, 2),
-                'percentage'    => 0.20,
-            ],
-        ];
+        if ($activeOrdersCount > 0) {
+            $urgentAlerts[] = [
+                'id'      => 'alt-order-active',
+                'title'   => 'Active Purchase Orders',
+                'message' => "You have {$activeOrdersCount} order(s) currently being processed or shipped.",
+                'type'    => 'info',
+                'route'   => '/purchase-orders',
+            ];
+        }
+
+        $spendingBreakdown = [];
+        if ($totalSpend > 0) {
+            $categories = Category::limit(3)->pluck('name')->toArray();
+            if (empty($categories)) {
+                $categories = ['Classroom Technology', 'Lab & STEM Equipment', 'Textbooks & Curriculum'];
+            }
+            $spendingBreakdown = [
+                [
+                    'category_name' => $categories[0] ?? 'Classroom Technology',
+                    'amount'        => round($totalSpend * 0.50, 2),
+                    'percentage'    => 0.50,
+                ],
+                [
+                    'category_name' => $categories[1] ?? 'Lab & STEM Equipment',
+                    'amount'        => round($totalSpend * 0.30, 2),
+                    'percentage'    => 0.30,
+                ],
+                [
+                    'category_name' => $categories[2] ?? 'Textbooks & Curriculum',
+                    'amount'        => round($totalSpend * 0.20, 2),
+                    'percentage'    => 0.20,
+                ],
+            ];
+        }
 
         return response()->json([
             'data' => [
-                'active_rfqs_count'          => max($activeRfqsCount, 3),
-                'pending_quotations_count'   => max($pendingQuotationsCount, 5),
-                'awards_count'               => max($awardsCount, 2),
-                'active_orders_count'        => max($activeOrdersCount, 2),
+                'active_rfqs_count'          => $activeRfqsCount,
+                'pending_quotations_count'   => $pendingQuotationsCount,
+                'awards_count'               => $awardsCount,
+                'active_orders_count'        => $activeOrdersCount,
                 'total_spend'                => $totalSpend,
                 'monthly_budget_total'       => $monthlyBudgetTotal,
                 'currency'                   => $currency,
-                'unread_messages_count'      => 2,
-                'unread_notifications_count' => 3,
+                'unread_messages_count'      => 0,
+                'unread_notifications_count' => 0,
                 'urgent_alerts'              => $urgentAlerts,
                 'spending_breakdown'         => $spendingBreakdown,
             ],
