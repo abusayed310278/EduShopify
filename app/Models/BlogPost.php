@@ -149,6 +149,6 @@ class BlogPost extends Model
             return asset(ltrim($path, '/'));
         }
 
-        return \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        return asset('storage/' . ltrim($path, '/'));
     }
 }

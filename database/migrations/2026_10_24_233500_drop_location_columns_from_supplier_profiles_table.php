@@ -44,11 +44,9 @@ return new class extends Migration
 
         // 2. Drop foreign keys and redundant location columns
         Schema::table('supplier_profiles', function (Blueprint $table) {
-            if (DB::getDriverName() === 'sqlite') {
-                $table->dropForeign(['country_id']);
-                $table->dropForeign(['state_id']);
-                $table->dropForeign(['city_id']);
-            }
+            $table->dropForeign(['country_id']);
+            $table->dropForeign(['state_id']);
+            $table->dropForeign(['city_id']);
             $table->dropColumn(['country_id', 'state_id', 'city_id', 'address']);
         });
     }
