@@ -1024,6 +1024,248 @@ class MarketplaceController extends Controller
         ]);
     }
 
+    public function resourceDetail(Request $request, $idOrSlug): JsonResponse
+    {
+        $id = is_numeric($idOrSlug) ? (int) $idOrSlug : 1;
+
+        $guides = [
+            1 => [
+                'id'                   => 1,
+                'title'                => 'How to Build a Future-Ready STEM Lab',
+                'subtitle'             => 'Complete planning guide, equipment list, safety standards and lab layout tips.',
+                'tag'                  => 'STEM Education',
+                'reading_time_minutes' => 12,
+                'views_count'          => 2840,
+                'downloads_count'      => 450,
+                'rating'               => 4.9,
+                'published_at'         => '2026-02-15T09:00:00Z',
+                'image_url'            => 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=1200&q=80',
+                'author_name'          => 'Dr. Aris Thorne',
+                'author_role'          => 'Director of STEM Infrastructure & Learning Spaces',
+                'author_avatar'        => 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+                'summary'              => 'Setting up an impactful STEM and robotics environment requires balancing flexible physical infrastructure, high-throughput digital networking, certified hardware, and robust health & safety procedures. This comprehensive roadmap covers spatial zoning, equipment matrices, budgeting formulas, and standard tender requirements for K-12 and university makerspaces.',
+                'sections'             => [
+                    [
+                        'id'      => 'sec-spatial',
+                        'title'   => '1. Spatial Zoning & Infrastructure Requirements',
+                        'content' => 'A future-ready STEM lab must accommodate three distinct operational zones: Design & Simulation (clean computer lab desks with dual monitors), Fabrication & Prototyping (dust and ventilation isolation for 3D printers, laser cutters, and soldering stations), and Collaboration/Testing (open movable tables and robotics arenas). Ensure minimum floor clearance of 4.5 square meters per student station.',
+                        'bullet_points' => [
+                            'Floor power pop-ups and overhead drop-down cord reels to eliminate trip hazards.',
+                            'Dedicated exhaust extraction (minimum 250 CFM) for resin and FDM filament print farms.',
+                            'ESD-safe conductive anti-static flooring in robotics assembly zones.',
+                            'Modular wheeled benches with chemical-resistant epoxy resin work surfaces.',
+                        ],
+                    ],
+                    [
+                        'id'      => 'sec-equipment',
+                        'title'   => '2. Essential Equipment & Kit Checklists',
+                        'content' => 'Avoid purchasing fragmented consumer-grade kits without long-term parts availability and curriculum support. Institutional procurement committees should prioritize open-source microcontrollers with hardware protection diodes, industrial-grade closed-loop stepper 3D printers, and robust sensor arrays.',
+                        'bullet_points' => [
+                            'Core Prototyping: 4x Enclosed CoreXY 3D Printers with HEPA filtration (0.05 - 0.3mm tolerance).',
+                            'Electronics Bench: 12x Arduino ESP32 / Raspberry Pi 5 starter stations with digital multimeters.',
+                            'Robotics Platforms: Modular programmable rovers with ultrasonic and LiDAR obstacle avoidance.',
+                            'Tools & Safety: Temperature-regulated soldering stations, fume extractors, and fire suppression blankets.',
+                        ],
+                    ],
+                    [
+                        'id'      => 'sec-budget',
+                        'title'   => '3. Budget Allocation & Cost Benchmarking',
+                        'content' => 'Based on analysis of 120+ institutional school lab tenders in 2025-2026, total initial setup budget typically breaks down into 45% Core Equipment & Hardware, 20% Spatial Furniture & Electrical, 15% Annual Consumables & Spare Modules, 10% Faculty Professional Development, and 10% Contingency & Freight.',
+                        'bullet_points' => [
+                            'Budget Tier A (Starter Lab / 20 Students): $18,000 - $25,000',
+                            'Budget Tier B (Comprehensive Maker Lab / 30 Students): $35,000 - $60,000',
+                            'Budget Tier C (Advanced Research & Innovation Hub): $75,000 - $120,000+',
+                        ],
+                    ],
+                    [
+                        'id'      => 'sec-compliance',
+                        'title'   => '4. Safety Standards & Institutional Compliance',
+                        'content' => 'All procuring institutions must insist on CE, FCC, RoHS, and UL-certified equipment. Laser cutters must feature interlock switches (Class 1 enclosure) preventing laser activation whenever the lid is opened. Chemical storage cabinets for flux and solvents must comply with NFPA 30 / OSHA standards.',
+                        'bullet_points' => [
+                            'Eye Wash Station and First Aid Station within 10 seconds unimpeded reach.',
+                            'Emergency Electrical Master Kill-Switch prominently labeled at room exits.',
+                            'Flammable storage cabinet with double-walled 18-gauge steel construction.',
+                        ],
+                    ],
+                ],
+                'checklists'           => [
+                    ['item' => 'CoreXY enclosed 3D printers with dual extrusion', 'category' => 'Fabrication', 'mandatory' => true],
+                    ['item' => 'Arduino Nano ESP32 student kits with sensor bundles', 'category' => 'Electronics', 'mandatory' => true],
+                    ['item' => 'Fume extractor with activated carbon and HEPA filtration', 'category' => 'Safety', 'mandatory' => true],
+                    ['item' => 'Heavy-duty mobile workbenches with butcher block tops', 'category' => 'Furniture', 'mandatory' => true],
+                    ['item' => 'Digital storage oscilloscopes (2-channel, 50MHz+)', 'category' => 'Instrumentation', 'mandatory' => false],
+                    ['item' => 'Class 1 enclosed CO2 laser cutter with air assist', 'category' => 'Fabrication', 'mandatory' => false],
+                ],
+                'downloadable_assets'  => [
+                    [
+                        'title'       => 'STEM Lab Equipment Specification Checklist',
+                        'file_format' => 'PDF',
+                        'file_size'   => '2.4 MB',
+                        'description' => 'Detailed tender-ready procurement specification sheet with ASTM and safety standards.',
+                    ],
+                    [
+                        'title'       => 'STEM Lab Budget Allocation Model & Calculator',
+                        'file_format' => 'XLSX',
+                        'file_size'   => '1.1 MB',
+                        'description' => 'Customizable spreadsheet to forecast initial equipment investment and yearly consumables.',
+                    ],
+                ],
+                'related_resources'    => [
+                    [
+                        'id'        => 2,
+                        'title'     => 'Interactive Display Buying Guide for Schools',
+                        'tag'       => 'Smart Classroom',
+                        'image_url' => 'https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=600&q=80',
+                    ],
+                    [
+                        'id'        => 6,
+                        'title'     => 'AI in Education: Implementation Guide',
+                        'tag'       => 'AI & Technology',
+                        'image_url' => 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=600&q=80',
+                    ],
+                ],
+            ],
+            2 => [
+                'id'                   => 2,
+                'title'                => 'Interactive Display Buying Guide for Schools',
+                'subtitle'             => 'Resolution, touch capability, software licensing, warranty and total cost of ownership.',
+                'tag'                  => 'Smart Classroom',
+                'reading_time_minutes' => 9,
+                'views_count'          => 1920,
+                'downloads_count'      => 310,
+                'rating'               => 4.85,
+                'published_at'         => '2026-02-10T11:00:00Z',
+                'image_url'            => 'https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=1200&q=80',
+                'author_name'          => 'Elena Rostova',
+                'author_role'          => 'EdTech Media & Digital Classroom Strategist',
+                'author_avatar'        => 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
+                'summary'              => 'Transitioning traditional blackboards to interactive flat panels (IFPD) is one of the highest-value classroom investments. This guide evaluates optical bonding, infrared vs capacitive touch, embedded Android vs OPS Windows slot-in PCs, and multi-year cloud device management.',
+                'sections'             => [
+                    [
+                        'id'      => 'sec-display-size',
+                        'title'   => '1. Sizing & Screen Resolution Standards',
+                        'content' => 'For standard 25-30 student classrooms (depth up to 8 meters), 75-inch 4K panels represent the sweet spot for visual ergonomics. For larger lecture halls or spaces exceeding 10 meters depth, 86-inch displays are mandatory. Always specify 4K UHD (3840x2160) anti-glare toughened glass with 7H hardness.',
+                        'bullet_points' => [
+                            '65-inch: Small seminar rooms & huddle areas (up to 15 students).',
+                            '75-inch: Standard K-12 classrooms (20-30 students).',
+                            '86-inch+: Large multi-purpose rooms and science amphitheaters.',
+                            'Zero-bonding or optical bonding to eliminate parallax error while writing.',
+                        ],
+                    ],
+                    [
+                        'id'      => 'sec-touch-tech',
+                        'title'   => '2. Touch Latency & Multi-User Interaction',
+                        'content' => 'High-frequency infrared (IR) touch with minimum 40 touch points and <5ms response latency provides natural handwriting experience with palm rejection. Dual stylus recognition with distinct nib sizes allows two students or teacher/student to write simultaneously in different colors.',
+                        'bullet_points' => [
+                            'Minimum 40-point touch with 1mm writing accuracy.',
+                            'Zero latency stylus drawing with palm rejection algorithm.',
+                            'Finger touch, pen write, and palm erase gesture shortcuts.',
+                        ],
+                    ],
+                    [
+                        'id'      => 'sec-ops-os',
+                        'title'   => '3. OS Architecture: Android vs OPS Slot-in Module',
+                        'content' => 'Demand Android 13 or 14 Enterprise Recommended firmware with Google EDLA (Enterprise Device Licensing Agreement) for native Google Play and Workspace access. For schools running specialized legacy Windows simulation software, specify open pluggable standard (OPS) Intel Core i5/i7 PC modules.',
+                        'bullet_points' => [
+                            'Native Google EDLA certification with verified Play Protect.',
+                            'Standard 80-pin OPS slot allowing modular PC upgrades without replacing the panel.',
+                            'Centralized Over-The-Air (OTA) firmware and app management portal.',
+                        ],
+                    ],
+                ],
+                'checklists'           => [
+                    ['item' => '75" 4K UHD Anti-Glare 7H toughened glass panel', 'category' => 'Display', 'mandatory' => true],
+                    ['item' => 'Zero-bonding display technology with 40-point IR touch', 'category' => 'Touch', 'mandatory' => true],
+                    ['item' => 'Google EDLA certified Android OS with Play Store', 'category' => 'Software', 'mandatory' => true],
+                    ['item' => 'Front-facing USB-C port with 65W Power Delivery & touch return', 'category' => 'Connectivity', 'mandatory' => true],
+                    ['item' => 'OPS slot-in Intel Core i5 Windows 11 Pro module', 'category' => 'Hardware', 'mandatory' => false],
+                    ['item' => 'Heavy-duty motorized height-adjustable mobile trolley cart', 'category' => 'Mounting', 'mandatory' => false],
+                ],
+                'downloadable_assets'  => [
+                    [
+                        'title'       => 'Interactive Flat Panel Procurement RFP Matrix',
+                        'file_format' => 'PDF',
+                        'file_size'   => '1.9 MB',
+                        'description' => 'Complete checklist of technical benchmarks, contrast ratios, and software licensing specs.',
+                    ],
+                ],
+                'related_resources'    => [
+                    [
+                        'id'        => 1,
+                        'title'     => 'How to Build a Future-Ready STEM Lab',
+                        'tag'       => 'STEM Education',
+                        'image_url' => 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+                    ],
+                ],
+            ],
+            6 => [
+                'id'                   => 6,
+                'title'                => 'AI in Education: Implementation Guide',
+                'subtitle'             => 'Step-by-step roadmap to integrate artificial intelligence tools safely into classrooms.',
+                'tag'                  => 'AI & Technology',
+                'reading_time_minutes' => 15,
+                'views_count'          => 3420,
+                'downloads_count'      => 580,
+                'rating'               => 4.95,
+                'published_at'         => '2026-02-01T08:30:00Z',
+                'image_url'            => 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=1200&q=80',
+                'author_name'          => 'Prof. Marcus Vance',
+                'author_role'          => 'Chair of Educational Artificial Intelligence & Ethics',
+                'author_avatar'        => 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+                'summary'              => 'Generative AI and physical AI hardware (vision kits, neural network accelerator boards) are reshaping classroom pedagogy. This procurement guide details ethical privacy safeguards, COPPA/FERPA data compliance, local edge compute versus cloud AI, and teacher support models.',
+                'sections'             => [
+                    [
+                        'id'      => 'sec-edge-vs-cloud',
+                        'title'   => '1. Edge Hardware vs Cloud AI in Schools',
+                        'content' => 'For hands-on student experimentation in K-12, prioritize edge neural accelerator boards (such as Google Coral, Raspberry Pi AI Kit, or Jetson Nano) that run object detection and voice recognition locally on device without sending student video or audio to external servers.',
+                        'bullet_points' => [
+                            'Zero data transmission risks when inferencing runs completely on local edge NPU hardware.',
+                            'No ongoing API token fees or cloud subscription lock-in.',
+                            'Real-time low-latency response (<20ms) for robotics vision tasks.',
+                        ],
+                    ],
+                    [
+                        'id'      => 'sec-data-privacy',
+                        'title'   => '2. Data Governance & Student Privacy Compliance',
+                        'content' => 'Procurement committees must ensure all software platforms include signed Student Privacy Pledge agreements, explicit prohibition of training LLM foundation models on student inputs, and strict role-based access control with Single Sign-On (SAML/Google Workspace).',
+                        'bullet_points' => [
+                            'FERPA, COPPA, and GDPR-K compliance certificates required from suppliers.',
+                            'Zero data retention policy for prompt interactions.',
+                            'Granular administrative dashboard with audit logs.',
+                        ],
+                    ],
+                ],
+                'checklists'           => [
+                    ['item' => 'Edge AI microcontroller kits with camera modules', 'category' => 'Hardware', 'mandatory' => true],
+                    ['item' => 'FERPA & COPPA compliant institutional software agreements', 'category' => 'Compliance', 'mandatory' => true],
+                    ['item' => 'Teacher professional training workshops curriculum', 'category' => 'Training', 'mandatory' => true],
+                ],
+                'downloadable_assets'  => [
+                    [
+                        'title'       => 'School AI Procurement Policy & Ethical Framework',
+                        'file_format' => 'PDF',
+                        'file_size'   => '2.8 MB',
+                        'description' => 'Model institutional policy template ready for school boards and IT directors.',
+                    ],
+                ],
+                'related_resources'    => [
+                    [
+                        'id'        => 1,
+                        'title'     => 'How to Build a Future-Ready STEM Lab',
+                        'tag'       => 'STEM Education',
+                        'image_url' => 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+                    ],
+                ],
+            ],
+        ];
+
+        $guide = $guides[$id] ?? $guides[1];
+
+        return response()->json([
+            'data' => $guide,
+        ]);
+    }
+
     public function savedItems(Request $request): JsonResponse
     {
         $user = $this->currentUser($request);

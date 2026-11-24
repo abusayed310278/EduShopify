@@ -138,6 +138,14 @@ class ProfileController extends Controller
             'profile_photo'     => 'nullable',
         ]);
 
+        // Merge files into payload so BuyerProfileService or fallback handles them
+        if ($request->hasFile('logo')) {
+            $validated['logo'] = $request->file('logo');
+        }
+        if ($request->hasFile('profile_photo')) {
+            $validated['profile_photo'] = $request->file('profile_photo');
+        }
+
         $service = app(BuyerProfileService::class);
         $profile = $service->saveDraft($account, $validated);
 
@@ -158,37 +166,34 @@ class ProfileController extends Controller
             }
         }
 
-        // Handle logo upload or URL
+        // Direct upload fallback if service didn't process
         if ($request->hasFile('logo')) {
-            if ($profile->logo && Storage::disk('public')->exists($profile->logo)) {
-                Storage::disk('public')->delete($profile->logo);
-            }
-            $profile->logo = $request->file('logo')->store('buyers/logos', 'public');
+            $file = $request->file('logo');
+            $path = $file->store('buyer-logos', 'public');
+            $profile->logo = $path;
             $profile->save();
-        } elseif ($request->has('logo')) {
+        } elseif ($request->filled('logo') && is_string($request->input('logo'))) {
             $logoVal = $request->input('logo');
-            if (is_string($logoVal)) {
-                if (str_contains($logoVal, '/storage/')) {
-                    $logoVal = substr($logoVal, strpos($logoVal, '/storage/') + 9);
-                }
+            if (str_contains($logoVal, '/storage/')) {
+                $logoVal = substr($logoVal, strpos($logoVal, '/storage/') + 9);
+            }
+            if (!file_exists($logoVal)) {
                 $profile->logo = $logoVal ?: null;
                 $profile->save();
             }
         }
 
-        // Handle profile photo upload or URL
         if ($request->hasFile('profile_photo')) {
-            if ($profile->profile_photo && Storage::disk('public')->exists($profile->profile_photo)) {
-                Storage::disk('public')->delete($profile->profile_photo);
-            }
-            $profile->profile_photo = $request->file('profile_photo')->store('buyers/photos', 'public');
+            $file = $request->file('profile_photo');
+            $path = $file->store('buyer-photos', 'public');
+            $profile->profile_photo = $path;
             $profile->save();
-        } elseif ($request->has('profile_photo')) {
+        } elseif ($request->filled('profile_photo') && is_string($request->input('profile_photo'))) {
             $photoVal = $request->input('profile_photo');
-            if (is_string($photoVal)) {
-                if (str_contains($photoVal, '/storage/')) {
-                    $photoVal = substr($photoVal, strpos($photoVal, '/storage/') + 9);
-                }
+            if (str_contains($photoVal, '/storage/')) {
+                $photoVal = substr($photoVal, strpos($photoVal, '/storage/') + 9);
+            }
+            if (!file_exists($photoVal)) {
                 $profile->profile_photo = $photoVal ?: null;
                 $profile->save();
             }

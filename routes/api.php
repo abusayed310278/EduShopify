@@ -61,6 +61,7 @@ Route::prefix('buyer')->group(function () {
     Route::get('/blog/posts', [MarketplaceController::class, 'blogPosts']);
     Route::get('/blog/posts/{id}', [MarketplaceController::class, 'blogPostDetail']);
     Route::get('/resources', [MarketplaceController::class, 'resources']);
+    Route::get('/resources/{id}', [MarketplaceController::class, 'resourceDetail']);
     Route::get('/privacy-policy', [MarketplaceController::class, 'privacyPolicy']);
     Route::get('/terms-policy', [MarketplaceController::class, 'termsPolicy']);
     Route::get('/faqs', [MarketplaceController::class, 'faqs']);
@@ -134,6 +135,7 @@ Route::prefix('buyer')->group(function () {
     // Buyer Profile & Delivery Locations
     Route::get('/profile', [ProfileController::class, 'getProfile']);
     Route::put('/profile', [ProfileController::class, 'updateProfile']);
+    Route::post('/profile', [ProfileController::class, 'updateProfile']);
     Route::post('/gallery', [ProfileController::class, 'storeGalleryImage']);
     Route::delete('/gallery/{id}', [ProfileController::class, 'deleteGalleryImage']);
     Route::get('/settings/security', [ProfileController::class, 'getSecurity']);

@@ -18,7 +18,13 @@ class BuyerProfileService
     public function saveDraft(\App\Models\Account $account, array $data): BuyerProfile
     {
         /** @var BuyerProfile $profile */
-        $profile = $account->buyerProfile ?? BuyerProfile::create(['account_id' => $account->id]);
+        $profile = $account->buyerProfile ?? BuyerProfile::firstOrCreate(
+            ['account_id' => $account->id],
+            [
+                'display_name'      => $data['display_name'] ?? $account->display_name ?? 'Buyer Account',
+                'organization_name' => $data['organization_name'] ?? $account->display_name ?? 'Buyer Account',
+            ]
+        );
 
         $logoPath = $this->handleImageUpload($data, 'logo', 'buyer-logos', $profile->logo);
         $profilePhotoPath = $this->handleImageUpload($data, 'profile_photo', 'buyer-photos', $profile->profile_photo);

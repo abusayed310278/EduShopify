@@ -21,52 +21,49 @@ class MessageController extends Controller
         $type = $request->query('type');
         $search = $request->query('search');
 
-        $conversations = Conversation::with(['messages' => fn ($q) => $q->latest()->limit(1)])
+        $conversations = Conversation::with([
+                'messages' => fn ($q) => $q->latest()->limit(1),
+                'accounts',
+            ])
+            ->whereHas('accounts', function ($q) use ($account) {
+                $q->where('accounts.id', $account->id);
+            })
             ->when($type && $type !== 'all', fn ($q) => $q->where('context_type', $type))
             ->when($search, fn ($q) => $q->where('title', 'like', "%{$search}%"))
             ->latest('updated_at')
             ->get();
 
-        if ($conversations->isEmpty()) {
-            // Seed a helpful sample conversation if none exists yet
-            $conv = Conversation::create([
-                'title'                 => 'Inquiry: Science Lab Microscopes Delivery',
-                'context_type'          => 'rfq',
-                'created_by_account_id' => $account->id,
-                'created_by_user_id'    => $user->id,
-            ]);
-
-            Message::create([
-                'conversation_id'   => $conv->id,
-                'sender_account_id' => $account->id,
-                'sender_user_id'    => $user->id,
-                'body'              => 'Hello, can you confirm if optics kits can be shipped by December 15th?',
-            ]);
-
-            // Seed a counterpart reply so a fresh thread reads as a real two-sided
-            // conversation. sender_account_id/sender_user_id are left null (no real
-            // supplier account exists yet) which is enough to make is_me resolve to
-            // false for this message.
-            Message::create([
-                'conversation_id'   => $conv->id,
-                'sender_account_id' => null,
-                'sender_user_id'    => null,
-                'body'              => 'Thanks for reaching out, yes - we can ship the optics kits within your 14-day window. Let us know the quantity you need.',
-            ]);
-
-            $conversations = collect([$conv]);
-        }
-
-        $data = $conversations->map(function ($c) use ($user) {
+        $data = $conversations->map(function ($c) use ($user, $account) {
             $lastMsg = $c->messages->first();
+
+            // Resolve counterpart account name
+            $otherAccount = $c->accounts->firstWhere('id', '!=', $account->id);
+            $peerName = $otherAccount?->display_name ?? $otherAccount?->name ?? 'Supplier';
+
+            // Resolve meaningful subject if title is null
+            $subject = $c->title;
+            if (! $subject) {
+                if ($c->context_type === 'rfq' && $c->context_id) {
+                    $subject = "RFQ #{$c->context_id} Discussion";
+                } elseif ($c->context_type === 'quotation' && $c->context_id) {
+                    $subject = "Quotation #{$c->context_id} Discussion";
+                } elseif ($c->context_type === 'po' && $c->context_id) {
+                    $subject = "Purchase Order #{$c->context_id} Discussion";
+                } elseif ($c->context_type === 'listing' && $c->context_id) {
+                    $subject = "Product Inquiry #{$c->context_id}";
+                } else {
+                    $subject = 'Procurement Discussion';
+                }
+            }
+
             return [
                 'id'                => $c->id,
-                'subject'           => $c->title ?? 'Procurement Discussion',
-                'conversation_type' => $c->context_type ?? 'rfq',
-                'peer_name'         => 'Global Science Supplies Ltd',
+                'subject'           => $subject,
+                'conversation_type' => $c->context_type ?? 'general',
+                'peer_name'         => $peerName,
                 'last_message'      => $lastMsg?->body ?? 'Tap to view discussion thread...',
                 'updated_at'        => $c->updated_at ? $c->updated_at->diffForHumans() : 'Recently',
-                'unread_count'      => 1,
+                'unread_count'      => $c->unreadCountForUser($user->id),
             ];
         });
 
@@ -75,22 +72,26 @@ class MessageController extends Controller
 
     public function show(Request $request, int $id): JsonResponse
     {
+        $account = $this->currentAccount($request);
         $user = $this->currentUser($request);
 
-        $conversation = Conversation::find($id) ?? Conversation::first();
+        $conversation = Conversation::with('accounts')->find($id);
 
         if (! $conversation) {
             return response()->json(['message' => 'Conversation not found.'], 404);
         }
 
+        $otherAccount = $conversation->accounts->firstWhere('id', '!=', $account->id);
+        $peerName = $otherAccount?->display_name ?? $otherAccount?->name ?? 'Supplier';
+
         $messages = Message::where('conversation_id', $conversation->id)
             ->oldest()
             ->get()
-            ->map(function ($m) use ($user) {
+            ->map(function ($m) use ($user, $peerName) {
                 return [
                     'id'              => $m->id,
                     'conversation_id' => $m->conversation_id,
-                    'sender_name'     => $m->sender_user_id === $user->id ? 'You' : 'Educational Supplier',
+                    'sender_name'     => $m->sender_user_id === $user->id ? 'You' : $peerName,
                     'sender_user_id'  => $m->sender_user_id,
                     'is_me'           => $m->sender_user_id === $user->id,
                     'is_system'       => false,
@@ -100,12 +101,27 @@ class MessageController extends Controller
                 ];
             });
 
+        $subject = $conversation->title;
+        if (! $subject) {
+            if ($conversation->context_type === 'rfq' && $conversation->context_id) {
+                $subject = "RFQ #{$conversation->context_id} Discussion";
+            } elseif ($conversation->context_type === 'quotation' && $conversation->context_id) {
+                $subject = "Quotation #{$conversation->context_id} Discussion";
+            } elseif ($conversation->context_type === 'po' && $conversation->context_id) {
+                $subject = "Purchase Order #{$conversation->context_id} Discussion";
+            } elseif ($conversation->context_type === 'listing' && $conversation->context_id) {
+                $subject = "Product Inquiry #{$conversation->context_id}";
+            } else {
+                $subject = 'Procurement Discussion';
+            }
+        }
+
         return response()->json([
             'data' => [
                 'id'                => $conversation->id,
-                'subject'           => $conversation->title ?? 'Procurement Discussion',
-                'conversation_type' => $conversation->context_type ?? 'rfq',
-                'peer_name'         => 'Global Science Supplies Ltd',
+                'subject'           => $subject,
+                'conversation_type' => $conversation->context_type ?? 'general',
+                'peer_name'         => $peerName,
                 'messages'          => $messages,
             ],
         ]);
