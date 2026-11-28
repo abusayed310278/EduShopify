@@ -142,78 +142,106 @@ class AuthController extends Controller
             'phone'            => 'nullable|string|max:30',
         ]);
 
-        $user = User::create([
-            'name'              => $validated['name'],
-            'email'             => $validated['email'],
-            'phone'             => $validated['phone'] ?? null,
-            'password'          => Hash::make($validated['password']),
-            'email_verified_at' => now(),
-            'status'            => 'active',
-        ]);
-
-        $accountNumber = 'ACC-BUY-' . strtoupper(Str::random(6));
-        $account = Account::create([
-            'account_number'        => $accountNumber,
-            'display_name'          => $validated['institution_name'],
-            'slug'                  => Str::slug($validated['institution_name']) . '-' . rand(100, 999),
-            'account_type'          => 'organization',
-            'status'                => 'active',
-            'primary_owner_user_id' => $user->id,
-        ]);
-
-        AccountMember::create([
-            'account_id'       => $account->id,
-            'user_id'          => $user->id,
-            'member_type'      => 'owner',
-            'is_primary_owner' => true,
-            'status'           => 'active',
-            'joined_at'        => now(),
-        ]);
-
-        $buyerCapType = CapabilityType::where('code', 'buyer')->first();
-        if ($buyerCapType) {
-            AccountCapability::create([
-                'account_id'         => $account->id,
-                'capability_type_id' => $buyerCapType->id,
-                'status'             => 'active',
-                'applied_at'         => now(),
-                'approved_at'        => now(),
+        return DB::transaction(function () use ($validated) {
+            $user = User::create([
+                'name'              => $validated['name'],
+                'email'             => strtolower(trim($validated['email'])),
+                'phone'             => $validated['phone'] ?? null,
+                'password'          => Hash::make($validated['password']),
+                'email_verified_at' => now(),
+                'status'            => 'active',
             ]);
-        }
 
-        BuyerProfile::create([
-            'account_id'        => $account->id,
-            'display_name'      => $validated['institution_name'],
-            'organization_name' => $validated['institution_name'],
-            'contact_person'    => $validated['name'],
-            'email'             => $validated['email'],
-            'phone'             => $validated['phone'] ?? null,
-        ]);
+            $accountNumber = 'ACC-BUY-' . strtoupper(Str::random(6));
+            $account = Account::create([
+                'account_number'        => $accountNumber,
+                'display_name'          => $validated['institution_name'],
+                'slug'                  => Str::slug($validated['institution_name']) . '-' . rand(100, 999),
+                'account_type'          => 'organization',
+                'status'                => 'active',
+                'primary_owner_user_id' => $user->id,
+            ]);
 
-        $token = 'buyer_token_' . Str::random(40);
-        Cache::put('api_token_' . $token, $user->id, now()->addDays(30));
+            AccountMember::create([
+                'account_id'       => $account->id,
+                'user_id'          => $user->id,
+                'member_type'      => 'owner',
+                'is_primary_owner' => true,
+                'status'           => 'active',
+                'joined_at'        => now(),
+            ]);
 
-        $activeAccount = [
-            'id'             => $account->id,
-            'account_number' => $account->account_number,
-            'display_name'   => $account->display_name,
-            'account_type'   => $account->account_type,
-            'status'         => 'active',
-            'is_owner'       => true,
-            'capabilities'   => ['buyer'],
-        ];
+            $buyerCapType = CapabilityType::where('code', 'buyer')->first();
+            if ($buyerCapType) {
+                AccountCapability::create([
+                    'account_id'         => $account->id,
+                    'capability_type_id' => $buyerCapType->id,
+                    'status'             => 'active',
+                    'applied_at'         => now(),
+                    'approved_at'        => now(),
+                    'activated_at'       => now(),
+                ]);
+            }
 
-        return response()->json([
-            'token'          => $token,
-            'user'           => [
-                'id'    => $user->id,
-                'name'  => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-            ],
-            'accounts'       => [$activeAccount],
-            'active_account' => $activeAccount,
-        ], 201);
+            // Match or assign buyer type (School, University, College, etc.)
+            $buyerTypeId = null;
+            if (!empty($validated['institution_type'])) {
+                $typeName = trim($validated['institution_type']);
+                $matchedType = BuyerType::where('is_active', true)
+                    ->where(function ($q) use ($typeName) {
+                        $q->where('slug', Str::slug($typeName))
+                          ->orWhere('name->en', 'LIKE', "%{$typeName}%");
+                    })->first();
+                if ($matchedType) {
+                    $buyerTypeId = $matchedType->id;
+                    DB::table('buyer_buyer_type')->insertOrIgnore([
+                        'buyer_account_id' => $account->id,
+                        'buyer_type_id'    => $matchedType->id,
+                        'is_primary'       => true,
+                        'created_at'       => now(),
+                        'updated_at'       => now(),
+                    ]);
+                }
+            }
+
+            BuyerProfile::create([
+                'account_id'           => $account->id,
+                'buyer_type_id'        => $buyerTypeId,
+                'display_name'         => $validated['institution_name'],
+                'organization_name'    => $validated['institution_name'],
+                'contact_person'       => $validated['name'],
+                'email'                => strtolower(trim($validated['email'])),
+                'phone'                => $validated['phone'] ?? null,
+                'current_step'         => 1,
+                'max_step_reached'     => 1,
+                'profile_completed_at' => null,
+            ]);
+
+            $token = 'buyer_token_' . Str::random(40);
+            Cache::put('api_token_' . $token, $user->id, now()->addDays(30));
+
+            $activeAccount = [
+                'id'             => $account->id,
+                'account_number' => $account->account_number,
+                'display_name'   => $account->display_name,
+                'account_type'   => $account->account_type,
+                'status'         => 'active',
+                'is_owner'       => true,
+                'capabilities'   => ['buyer'],
+            ];
+
+            return response()->json([
+                'token'          => $token,
+                'user'           => [
+                    'id'    => $user->id,
+                    'name'  => $user->name,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                ],
+                'accounts'       => [$activeAccount],
+                'active_account' => $activeAccount,
+            ], 201);
+        });
     }
 
     /**
